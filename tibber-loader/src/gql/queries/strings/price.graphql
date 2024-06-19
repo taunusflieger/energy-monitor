@@ -1,0 +1,18 @@
+query Price($id: ID!) {
+    viewer {
+        home(id: $id) {
+            currentSubscription {
+                priceInfo {
+                    current {
+                        total
+                        energy
+                        tax
+                        startsAt
+                        currency
+                        level
+                    }
+                }
+            }
+        }
+    }
+}
