@@ -18,6 +18,11 @@ const MQTT_BROKER_PORT: u16 = 1883;
 async fn main() -> Result<()> {
     env_logger::init();
 
+    println!(
+        "Starting Matrix Display Driver (emdisplayd) {}",
+        env!("CARGO_PKG_VERSION")
+    );
+
     let mut mqttoptions = MqttOptions::new(MQTT_CLIENT_NAME, MQTT_BROKER_ADDRESS, MQTT_BROKER_PORT);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
 

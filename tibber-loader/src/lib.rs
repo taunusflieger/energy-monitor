@@ -55,7 +55,6 @@ impl Session {
         .await?
         .viewer;
 
-        let login = viewer.login.unwrap();
         let homes: Vec<HomeId> = viewer
             .homes
             .into_iter()
@@ -66,7 +65,7 @@ impl Session {
             Err(TibberLoaderError::OnlyOneHomeSupported)
         } else {
             Ok(User {
-                user_id: login,
+                user_id: viewer.login.ok_or(TibberLoaderError::MissingUserId)?,
                 home_id: homes[0].to_owned(),
             })
         }
@@ -83,7 +82,7 @@ impl Session {
         .await?
         .viewer;
 
-        let price = PriceInfo::new(
+        Ok(PriceInfo::new(
             price
                 .home
                 .current_subscription
@@ -92,8 +91,6 @@ impl Session {
                 .ok_or(TibberLoaderError::NoPriceInfo)?
                 .current
                 .ok_or(TibberLoaderError::NoCurrentPrice)?,
-        );
-
-        Ok(price)
+        ))
     }
 }

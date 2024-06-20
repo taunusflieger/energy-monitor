@@ -24,8 +24,7 @@ pub fn connect(config: &Config) -> Result<Client, TibberLoaderError> {
         .user_agent(consts::get_user_agent())
         .default_headers(headers)
         .timeout(Duration::from_secs(15))
-        .build()
-        .unwrap();
+        .build()?;
     Ok(client)
 }
 

@@ -23,7 +23,10 @@ const PULSE_BRIDGE_USERNAME: &str = "admin";
 async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
 
-    info!("Starting Tibber Data Provider");
+    println!(
+        "Starting Tibber Data Provider (emtibberd){}",
+        env!("CARGO_PKG_VERSION")
+    );
 
     // Check if Tibber API key env variable is set
     // In case of failsure, fail early
@@ -81,6 +84,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 let result = parse(&message)?;
 
                 // 2nd message is GetListResponse with the values we are interested
+                let len = result.messages.len();
+                if len < 2 {
+                    error!("Expected 2 messages, got {len}");
+                    return Result::<_, anyhow::Error>::Ok(());
+                }
                 let get_list_response = result.messages[1].message_body.clone();
 
                 match get_list_response {
