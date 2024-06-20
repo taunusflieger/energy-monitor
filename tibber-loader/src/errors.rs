@@ -12,6 +12,9 @@ pub enum TibberLoaderError {
     #[error("Invalide http header value")]
     InvalidHeader(#[from] InvalidHeaderValue),
 
+    #[error("Tibber API has not provided a user id")]
+    MissingUserId,
+
     #[error("Failed to get data from GraphQL response")]
     MissingResponseData,
 
