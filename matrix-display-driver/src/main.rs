@@ -1,7 +1,11 @@
+#![feature(inline_const_pat)]
 use anyhow::Result;
 use energy_monitor_lib::{
-    dto::{PriceInformation, PriceLevel},
-    mqtt_topics::{TIBBER_CONSUMPTION_TOPIC, TIBBER_PRICE_INFORMATION_TOPIC},
+    pulse::topics::PULSE_CONSUMPTION_TOPIC,
+    tibber::{
+        dto::{PriceInformation, PriceLevel},
+        topics::TIBBER_PRICE_INFORMATION_TOPIC,
+    },
 };
 use log::{debug, info};
 use rumqttc::{AsyncClient, MqttOptions, QoS};
@@ -27,18 +31,15 @@ async fn main() -> Result<()> {
     mqttoptions.set_keep_alive(Duration::from_secs(5));
 
     let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
-    client
-        .subscribe(OPEN_DTU_AC_POWER_TOPIC, QoS::AtMostOnce)
-        .await?;
-    client
-        .subscribe(OPEN_DTU_AC_YIELD_DAY_TOPIC, QoS::AtMostOnce)
-        .await?;
-    client
-        .subscribe(TIBBER_CONSUMPTION_TOPIC, QoS::AtMostOnce)
-        .await?;
-    client
-        .subscribe(TIBBER_PRICE_INFORMATION_TOPIC, QoS::AtMostOnce)
-        .await?;
+
+    for topic in [
+        OPEN_DTU_AC_POWER_TOPIC,
+        OPEN_DTU_AC_YIELD_DAY_TOPIC,
+        PULSE_CONSUMPTION_TOPIC.name(),
+        TIBBER_PRICE_INFORMATION_TOPIC.name(),
+    ] {
+        client.subscribe(topic, QoS::AtMostOnce).await?;
+    }
 
     // Clone the client to use in the publishing task
     let publish_client = client.clone();
@@ -87,14 +88,15 @@ async fn main() -> Result<()> {
                         )
                         .await?;
                 }
-                TIBBER_CONSUMPTION_TOPIC => {
-                    let payload = String::from_utf8_lossy(&publish.payload);
-                    let conumption: f64 = payload.parse()?;
+                const { PULSE_CONSUMPTION_TOPIC.name() } => {
+                    let consumption = PULSE_CONSUMPTION_TOPIC
+                        .decode(&publish.payload)?
+                        .consumption;
 
-                    info!("Current consumption: {}W", payload);
+                    info!("Current consumption: {}W", consumption);
 
                     let publish_payload = json!({
-                        "text": format!("{:0.1} kW", conumption / 1000.0),
+                        "text": format!("{:0.1} kW", consumption as f32 / 1000.0),
                         "duration": 2
                     });
 
@@ -107,10 +109,9 @@ async fn main() -> Result<()> {
                         )
                         .await?;
                 }
-                TIBBER_PRICE_INFORMATION_TOPIC => {
-                    let payload = String::from_utf8_lossy(&publish.payload);
-
-                    let price_information: PriceInformation = serde_json::from_str(&payload)?;
+                const { TIBBER_PRICE_INFORMATION_TOPIC.name() } => {
+                    let price_information: PriceInformation =
+                        TIBBER_PRICE_INFORMATION_TOPIC.decode(&publish.payload)?;
 
                     info!("Current price: {} Euro", price_information.total);
 

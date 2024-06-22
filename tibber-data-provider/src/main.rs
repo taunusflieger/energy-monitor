@@ -1,4 +1,8 @@
-use energy_monitor_lib::{dto, mqtt_topics};
+#![feature(inline_const_pat)]
+use energy_monitor_lib::{
+    pulse::{dto::Consumption, topics::PULSE_CONSUMPTION_TOPIC},
+    tibber::{dto, topics::TIBBER_PRICE_INFORMATION_TOPIC},
+};
 use futures_util::future::FutureExt;
 use log::{error, info};
 use reqwest::Client;
@@ -12,6 +16,7 @@ use std::error::Error;
 use tibber_loader::{config::Config, gql::queries::PriceLevel};
 use tokio::{task, time::Duration};
 use tokio_cron_scheduler::{Job, JobScheduler};
+
 const TIBBER_API_URL: &str = "https://api.tibber.com/v1-beta/gql";
 const PULSE_BRIDGE_URL: &str = "http://192.168.100.60/data.json?node_id=1";
 const MQTT_CLIENT_NAME: &str = "tibber_bridge_data_provider";
@@ -102,13 +107,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 };
                                 info!("Power = {current_power}W");
 
+                                //let payload = PULSE_CONSUMPTION_TOPIC.encode(&consumption)?;
                                 // Publish the message
                                 publish_client_tibber_data
                                     .publish(
-                                        mqtt_topics::TIBBER_CONSUMPTION_TOPIC,
+                                        PULSE_CONSUMPTION_TOPIC.name(),
                                         QoS::AtMostOnce,
                                         false,
-                                        format!("{current_power}"),
+                                        PULSE_CONSUMPTION_TOPIC.encode(&Consumption {
+                                            consumption: current_power,
+                                        }),
                                     )
                                     .await?;
                             }
@@ -170,15 +178,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         },
                     };
 
-                    let publish_payload = serde_json::to_string(&price_information)?;
-
                     // Publish the message
                     publish_client_tibber_data
                         .publish(
-                            mqtt_topics::TIBBER_PRICE_INFORMATION_TOPIC,
+                            TIBBER_PRICE_INFORMATION_TOPIC.name(),
                             QoS::AtMostOnce,
                             false,
-                            publish_payload,
+                            TIBBER_PRICE_INFORMATION_TOPIC.encode(&price_information),
                         )
                         .await?;
                 } else {

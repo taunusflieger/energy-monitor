@@ -282,6 +282,7 @@ dependencies = [
 name = "energy-monitor-lib"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "serde",
  "serde_json",
 ]
