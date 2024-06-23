@@ -29,7 +29,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
 
     println!(
-        "Starting Tibber Data Provider (emtibberd){}",
+        "Starting Tibber Data Provider (emtibberd) v{}",
         env!("CARGO_PKG_VERSION")
     );
 
@@ -58,7 +58,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         Box::pin(
             async move {
-                info!("Executing data fetch from Pulse Bridge job");
+                println!("Executing data fetch from Pulse Bridge job");
 
                 let pulse_bridge_pwd = if let Ok(pwd) = std::env::var("PULSE_BRIDGE_PASSWORD") {
                     if pwd.is_empty() {
@@ -155,7 +155,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let publish_client_tibber_data = tibber_client.clone();
         Box::pin(
             async move {
-                info!("Executing Tibber job");
+                println!("Executing Tibber job");
                 let config = Config::new(TIBBER_API_URL)?;
 
                 let session = tibber_loader::Session::new(config).await?;
@@ -188,7 +188,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         )
                         .await?;
                 } else {
-                    info!("No current price");
+                    error!("No current price");
                 }
                 Result::<_, anyhow::Error>::Ok(())
             }

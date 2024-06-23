@@ -23,7 +23,7 @@ async fn main() -> Result<()> {
     env_logger::init();
 
     println!(
-        "Starting Matrix Display Driver (emdisplayd) {}",
+        "Starting Matrix Display Driver (emdisplayd) v{}",
         env!("CARGO_PKG_VERSION")
     );
 
