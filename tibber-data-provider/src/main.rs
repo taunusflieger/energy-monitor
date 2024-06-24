@@ -1,4 +1,3 @@
-#![feature(inline_const_pat)]
 use energy_monitor_lib::{
     pulse::{dto::Consumption, topics::PULSE_CONSUMPTION_TOPIC},
     tibber::{dto, topics::TIBBER_PRICE_INFORMATION_TOPIC},
@@ -50,6 +49,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let pulse_bridge_client = client.clone();
     let tibber_client = client.clone();
+
+    // When first stating the application, we want to fetch the current price
+    get_current_tibber_price(&client.clone()).await?;
 
     // This job runs every 10 seconds and retrives the current power consumption
     // from the Pulse Bridge
@@ -155,42 +157,43 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let publish_client_tibber_data = tibber_client.clone();
         Box::pin(
             async move {
-                println!("Executing Tibber job");
-                let config = Config::new(TIBBER_API_URL)?;
+                // println!("Executing Tibber job");
+                // let config = Config::new(TIBBER_API_URL)?;
 
-                let session = tibber_loader::Session::new(config).await?;
+                // let session = tibber_loader::Session::new(config).await?;
 
-                let current_price = session.get_current_price().await?;
-                if let Some(price) = current_price {
-                    info!("Current price: {:?} Euro", price.total);
-                    info!("Price Level: {:?}", price.level);
+                // let current_price = session.get_current_price().await?;
+                // if let Some(price) = current_price {
+                //     info!("Current price: {:?} Euro", price.total);
+                //     info!("Price Level: {:?}", price.level);
 
-                    let price_information = dto::PriceInformation {
-                        total: price.total as f32,
-                        level: match price.level {
-                            PriceLevel::Cheap => dto::PriceLevel::Cheap,
-                            PriceLevel::Expensive => dto::PriceLevel::Expensive,
-                            PriceLevel::Normal => dto::PriceLevel::Normal,
-                            PriceLevel::VeryCheap => dto::PriceLevel::VeryCheap,
-                            PriceLevel::VeryExpensive => dto::PriceLevel::VeryExpensive,
-                            PriceLevel::None => dto::PriceLevel::None,
-                            _ => dto::PriceLevel::None,
-                        },
-                    };
+                //     let price_information = dto::PriceInformation {
+                //         total: price.total as f32,
+                //         level: match price.level {
+                //             PriceLevel::Cheap => dto::PriceLevel::Cheap,
+                //             PriceLevel::Expensive => dto::PriceLevel::Expensive,
+                //             PriceLevel::Normal => dto::PriceLevel::Normal,
+                //             PriceLevel::VeryCheap => dto::PriceLevel::VeryCheap,
+                //             PriceLevel::VeryExpensive => dto::PriceLevel::VeryExpensive,
+                //             PriceLevel::None => dto::PriceLevel::None,
+                //             _ => dto::PriceLevel::None,
+                //         },
+                //     };
 
-                    // Publish the message
-                    publish_client_tibber_data
-                        .publish(
-                            TIBBER_PRICE_INFORMATION_TOPIC.name(),
-                            QoS::AtMostOnce,
-                            false,
-                            TIBBER_PRICE_INFORMATION_TOPIC.encode(&price_information),
-                        )
-                        .await?;
-                } else {
-                    error!("No current price");
-                }
-                Result::<_, anyhow::Error>::Ok(())
+                //     // Publish the message
+                //     publish_client_tibber_data
+                //         .publish(
+                //             TIBBER_PRICE_INFORMATION_TOPIC.name(),
+                //             QoS::AtMostOnce,
+                //             false,
+                //             TIBBER_PRICE_INFORMATION_TOPIC.encode(&price_information),
+                //         )
+                //         .await?;
+                // } else {
+                //     error!("No current price");
+                // }
+                // Result::<_, anyhow::Error>::Ok(())
+                get_current_tibber_price(&publish_client_tibber_data).await
             }
             .map(|res| {
                 if let Err(err) = res {
@@ -236,4 +239,45 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     }
     Ok(())
+}
+
+async fn get_current_tibber_price(
+    publish_client_tibber_data: &AsyncClient,
+) -> Result<(), anyhow::Error> {
+    println!("Executing Tibber job");
+    let config = Config::new(TIBBER_API_URL)?;
+
+    let session = tibber_loader::Session::new(config).await?;
+
+    let current_price = session.get_current_price().await?;
+    if let Some(price) = current_price {
+        info!("Current price: {:?} Euro", price.total);
+        info!("Price Level: {:?}", price.level);
+
+        let price_information = dto::PriceInformation {
+            total: price.total as f32,
+            level: match price.level {
+                PriceLevel::Cheap => dto::PriceLevel::Cheap,
+                PriceLevel::Expensive => dto::PriceLevel::Expensive,
+                PriceLevel::Normal => dto::PriceLevel::Normal,
+                PriceLevel::VeryCheap => dto::PriceLevel::VeryCheap,
+                PriceLevel::VeryExpensive => dto::PriceLevel::VeryExpensive,
+                PriceLevel::None => dto::PriceLevel::None,
+                _ => dto::PriceLevel::None,
+            },
+        };
+
+        // Publish the message
+        publish_client_tibber_data
+            .publish(
+                TIBBER_PRICE_INFORMATION_TOPIC.name(),
+                QoS::AtMostOnce,
+                false,
+                TIBBER_PRICE_INFORMATION_TOPIC.encode(&price_information),
+            )
+            .await?;
+    } else {
+        error!("No current price");
+    }
+    Result::<_, anyhow::Error>::Ok(())
 }

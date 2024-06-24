@@ -5,6 +5,9 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 
+[package.metadata]
+requires-nightly = true
+
 [[bin]]
 name = "emdisplayd"
 path = "src/main.rs"
@@ -12,6 +15,7 @@ path = "src/main.rs"
 [dependencies]
 tibber-loader = { version = "0.1.0", path = "../tibber-loader" }
 energy-monitor-lib = { version = "0.1.0", path = "../energy-monitor-lib" }
+serde_with = "1.4.0"
 rumqttc = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }

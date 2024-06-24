@@ -1,3 +1,4 @@
+pub mod opendtu;
 pub mod pulse;
 pub mod tibber;
 pub mod topic;
