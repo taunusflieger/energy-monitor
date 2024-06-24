@@ -156,46 +156,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut tibber_job = Job::new_async("0 2 * * * *", move |_, _| {
         let publish_client_tibber_data = tibber_client.clone();
         Box::pin(
-            async move {
-                // println!("Executing Tibber job");
-                // let config = Config::new(TIBBER_API_URL)?;
-
-                // let session = tibber_loader::Session::new(config).await?;
-
-                // let current_price = session.get_current_price().await?;
-                // if let Some(price) = current_price {
-                //     info!("Current price: {:?} Euro", price.total);
-                //     info!("Price Level: {:?}", price.level);
-
-                //     let price_information = dto::PriceInformation {
-                //         total: price.total as f32,
-                //         level: match price.level {
-                //             PriceLevel::Cheap => dto::PriceLevel::Cheap,
-                //             PriceLevel::Expensive => dto::PriceLevel::Expensive,
-                //             PriceLevel::Normal => dto::PriceLevel::Normal,
-                //             PriceLevel::VeryCheap => dto::PriceLevel::VeryCheap,
-                //             PriceLevel::VeryExpensive => dto::PriceLevel::VeryExpensive,
-                //             PriceLevel::None => dto::PriceLevel::None,
-                //             _ => dto::PriceLevel::None,
-                //         },
-                //     };
-
-                //     // Publish the message
-                //     publish_client_tibber_data
-                //         .publish(
-                //             TIBBER_PRICE_INFORMATION_TOPIC.name(),
-                //             QoS::AtMostOnce,
-                //             false,
-                //             TIBBER_PRICE_INFORMATION_TOPIC.encode(&price_information),
-                //         )
-                //         .await?;
-                // } else {
-                //     error!("No current price");
-                // }
-                // Result::<_, anyhow::Error>::Ok(())
-                get_current_tibber_price(&publish_client_tibber_data).await
-            }
-            .map(|res| {
+            async move { get_current_tibber_price(&publish_client_tibber_data).await }.map(|res| {
                 if let Err(err) = res {
                     error!("Failed to retive Tibber current price info: {:?}", err);
                 }
