@@ -51,7 +51,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let tibber_client = client.clone();
 
     // When first stating the application, we want to fetch the current price
-    get_current_tibber_price(&client.clone()).await?;
+    get_tibber_data_and_publish(&client.clone()).await?;
 
     // This job runs every 10 seconds and retrives the current power consumption
     // from the Pulse Bridge
@@ -59,83 +59,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let publish_client_tibber_data = pulse_bridge_client.clone();
 
         Box::pin(
-            async move {
-                println!("Executing data fetch from Pulse Bridge job");
-
-                let pulse_bridge_pwd = if let Ok(pwd) = std::env::var("PULSE_BRIDGE_PASSWORD") {
-                    if pwd.is_empty() {
-                        error!("PULSE_BRIDGE_PASSWORD is empty");
-                        std::process::exit(1);
-                    } else {
-                        pwd
+            async move { get_pulse_bridge_data_and_publish(&publish_client_tibber_data).await }
+                .map(|res| {
+                    if let Err(err) = res {
+                        error!(
+                            "Failed to retive current power consumption from Pulse Bridge: {}",
+                            err
+                        );
                     }
-                } else {
-                    error!("PULSE_BRIDGE_PASSWORD is not set");
-                    std::process::exit(1);
-                };
-                let bridge_client = Client::builder().timeout(Duration::from_secs(15)).build()?;
-                let mut resp = bridge_client
-                    .get(PULSE_BRIDGE_URL)
-                    .basic_auth(PULSE_BRIDGE_USERNAME, Some(pulse_bridge_pwd))
-                    .send()
-                    .await?;
-
-                let mut buffer: bytes::BytesMut = bytes::BytesMut::new();
-
-                while let Some(chunk) = resp.chunk().await? {
-                    buffer.extend_from_slice(chunk.to_vec().as_slice());
-                }
-
-                // We have only 1 message
-                let message = decode(buffer.to_vec())[0].clone()?;
-                let result = parse(&message)?;
-
-                // 2nd message is GetListResponse with the values we are interested
-                let len = result.messages.len();
-                if len < 2 {
-                    error!("Expected 2 messages, got {len}");
-                    return Result::<_, anyhow::Error>::Ok(());
-                }
-                let get_list_response = result.messages[1].message_body.clone();
-
-                match get_list_response {
-                    MessageBody::GetListResponse(le) => {
-                        for entry in le.val_list {
-                            // Current power consumption
-                            if entry.obj_name == [1, 0, 16, 7, 0, 255] {
-                                let current_power = match entry.value {
-                                    Value::I32(v) => v,
-                                    _ => 0,
-                                };
-                                info!("Power = {current_power}W");
-
-                                //let payload = PULSE_CONSUMPTION_TOPIC.encode(&consumption)?;
-                                // Publish the message
-                                publish_client_tibber_data
-                                    .publish(
-                                        PULSE_CONSUMPTION_TOPIC.name(),
-                                        QoS::AtMostOnce,
-                                        false,
-                                        PULSE_CONSUMPTION_TOPIC.encode(&Consumption {
-                                            consumption: current_power,
-                                        }),
-                                    )
-                                    .await?;
-                            }
-                        }
-                    }
-                    _ => error!("Expected ListEntry"),
-                };
-                Result::<_, anyhow::Error>::Ok(())
-            }
-            .map(|res| {
-                if let Err(err) = res {
-                    error!(
-                        "Failed to retive current power consumption from Pulse Bridge: {}",
-                        err
-                    );
-                }
-            }),
+                }),
         )
     })?;
 
@@ -156,11 +88,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut tibber_job = Job::new_async("0 2 * * * *", move |_, _| {
         let publish_client_tibber_data = tibber_client.clone();
         Box::pin(
-            async move { get_current_tibber_price(&publish_client_tibber_data).await }.map(|res| {
-                if let Err(err) = res {
-                    error!("Failed to retive Tibber current price info: {:?}", err);
-                }
-            }),
+            async move { get_tibber_data_and_publish(&publish_client_tibber_data).await }.map(
+                |res| {
+                    if let Err(err) = res {
+                        error!("Failed to retive Tibber current price info: {:?}", err);
+                    }
+                },
+            ),
         )
     })?;
 
@@ -202,7 +136,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-async fn get_current_tibber_price(
+async fn get_tibber_data_and_publish(
     publish_client_tibber_data: &AsyncClient,
 ) -> Result<(), anyhow::Error> {
     println!("Executing Tibber job");
@@ -210,35 +144,126 @@ async fn get_current_tibber_price(
 
     let session = tibber_loader::Session::new(config).await?;
 
-    let current_price = session.get_current_price().await?;
-    if let Some(price) = current_price {
-        info!("Current price: {:?} Euro", price.total);
-        info!("Price Level: {:?}", price.level);
+    // Try to get the current price 3 times. If this is not successful,
+    // we will try again in the next run of the job
+    for _ in 0..3 {
+        match session.get_current_price().await {
+            Ok(Some(price)) => {
+                info!("Current price: {:?} Euro", price.total);
+                info!("Price Level: {:?}", price.level);
 
-        let price_information = dto::PriceInformation {
-            total: price.total as f32,
-            level: match price.level {
-                PriceLevel::Cheap => dto::PriceLevel::Cheap,
-                PriceLevel::Expensive => dto::PriceLevel::Expensive,
-                PriceLevel::Normal => dto::PriceLevel::Normal,
-                PriceLevel::VeryCheap => dto::PriceLevel::VeryCheap,
-                PriceLevel::VeryExpensive => dto::PriceLevel::VeryExpensive,
-                PriceLevel::None => dto::PriceLevel::None,
-                _ => dto::PriceLevel::None,
-            },
-        };
+                let price_information = dto::PriceInformation {
+                    total: price.total as f32,
+                    level: match price.level {
+                        PriceLevel::Cheap => dto::PriceLevel::Cheap,
+                        PriceLevel::Expensive => dto::PriceLevel::Expensive,
+                        PriceLevel::Normal => dto::PriceLevel::Normal,
+                        PriceLevel::VeryCheap => dto::PriceLevel::VeryCheap,
+                        PriceLevel::VeryExpensive => dto::PriceLevel::VeryExpensive,
+                        PriceLevel::None => dto::PriceLevel::None,
+                        _ => dto::PriceLevel::None,
+                    },
+                };
 
-        // Publish the message
-        publish_client_tibber_data
-            .publish(
-                TIBBER_PRICE_INFORMATION_TOPIC.name(),
-                QoS::AtMostOnce,
-                false,
-                TIBBER_PRICE_INFORMATION_TOPIC.encode(&price_information),
-            )
-            .await?;
-    } else {
-        error!("No current price");
+                // Publish the message
+                match publish_client_tibber_data
+                    .publish(
+                        TIBBER_PRICE_INFORMATION_TOPIC.name(),
+                        QoS::AtMostOnce,
+                        false,
+                        TIBBER_PRICE_INFORMATION_TOPIC.encode(&price_information),
+                    )
+                    .await
+                {
+                    Ok(_) => {
+                        info!("Published price information message");
+                        break;
+                    }
+                    Err(e) => {
+                        error!("Failed to publish message: {:?}", e);
+                    }
+                }
+            }
+            Ok(None) => {
+                info!("No price information available");
+            }
+            Err(e) => {
+                error!("Failed to get current price: {:?}", e);
+            }
+        }
+        tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
     }
+    Ok(())
+}
+
+async fn get_pulse_bridge_data_and_publish(
+    publish_client_tibber_data: &AsyncClient,
+) -> Result<(), anyhow::Error> {
+    println!("Executing data fetch from Pulse Bridge job");
+
+    let pulse_bridge_pwd = if let Ok(pwd) = std::env::var("PULSE_BRIDGE_PASSWORD") {
+        if pwd.is_empty() {
+            error!("PULSE_BRIDGE_PASSWORD is empty");
+            std::process::exit(1);
+        } else {
+            pwd
+        }
+    } else {
+        error!("PULSE_BRIDGE_PASSWORD is not set");
+        std::process::exit(1);
+    };
+    let bridge_client = Client::builder().timeout(Duration::from_secs(15)).build()?;
+    let mut resp = bridge_client
+        .get(PULSE_BRIDGE_URL)
+        .basic_auth(PULSE_BRIDGE_USERNAME, Some(pulse_bridge_pwd))
+        .send()
+        .await?;
+
+    let mut buffer: bytes::BytesMut = bytes::BytesMut::new();
+
+    while let Some(chunk) = resp.chunk().await? {
+        buffer.extend_from_slice(chunk.to_vec().as_slice());
+    }
+
+    // We have only 1 message
+    let message = decode(buffer.to_vec())[0].clone()?;
+    let result = parse(&message)?;
+
+    // 2nd message is GetListResponse with the values we are interested
+    let len = result.messages.len();
+    if len < 2 {
+        error!("Expected 2 messages, got {len}");
+        return Result::<_, anyhow::Error>::Ok(());
+    }
+    let get_list_response = result.messages[1].message_body.clone();
+
+    match get_list_response {
+        MessageBody::GetListResponse(le) => {
+            for entry in le.val_list {
+                // Current power consumption
+                if entry.obj_name == [1, 0, 16, 7, 0, 255] {
+                    let current_power = match entry.value {
+                        Value::I32(v) => v,
+                        _ => 0,
+                    };
+                    info!("Power = {current_power}W");
+
+                    //let payload = PULSE_CONSUMPTION_TOPIC.encode(&consumption)?;
+                    // Publish the message
+                    publish_client_tibber_data
+                        .publish(
+                            PULSE_CONSUMPTION_TOPIC.name(),
+                            QoS::AtMostOnce,
+                            false,
+                            PULSE_CONSUMPTION_TOPIC.encode(&Consumption {
+                                consumption: current_power,
+                            }),
+                        )
+                        .await?;
+                }
+            }
+        }
+        _ => error!("Expected ListEntry"),
+    };
     Result::<_, anyhow::Error>::Ok(())
 }
