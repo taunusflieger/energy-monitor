@@ -9,7 +9,7 @@ use energy_monitor_lib::{
         topics::TIBBER_PRICE_INFORMATION_TOPIC,
     },
 };
-use log::{debug, info};
+use log::{debug, error, info};
 use rumqttc::{AsyncClient, MqttOptions, QoS};
 use std::time::Duration;
 mod awtrix3;
@@ -43,96 +43,106 @@ async fn main() -> Result<()> {
 
     // Clone the client to use in the publishing task
     let publish_client = client.clone();
+    loop {
+        match eventloop.poll().await {
+            Ok(notification) => {
+                debug!("Received = {:?}", notification);
+                if let rumqttc::Event::Incoming(rumqttc::Packet::Publish(publish)) = notification {
+                    match publish.topic.as_str() {
+                        const { OPEN_DTU_AC_YIELD_DAY_TOPIC.name() } => {
+                            let yield_day = OPEN_DTU_AC_YIELD_DAY_TOPIC.decode(&publish.payload)?;
 
-    while let Ok(notification) = eventloop.poll().await {
-        debug!("Received = {:?}", notification);
-        if let rumqttc::Event::Incoming(rumqttc::Packet::Publish(publish)) = notification {
-            match publish.topic.as_str() {
-                const { OPEN_DTU_AC_YIELD_DAY_TOPIC.name() } => {
-                    let yield_day = OPEN_DTU_AC_YIELD_DAY_TOPIC.decode(&publish.payload)?;
+                            info!("yield today: {}W", yield_day);
+                            publish_client
+                                .publish(
+                                    MATRIX_DISPLAY_APP_YIELD_DAY_TOPIC.name(),
+                                    QoS::AtMostOnce,
+                                    false,
+                                    MATRIX_DISPLAY_APP_YIELD_DAY_TOPIC.encode(&CustomApplication {
+                                        text: yield_day.to_string(),
+                                        duration: Some(5),
+                                        icon: Some(52455.to_string()),
+                                        ..Default::default()
+                                    }),
+                                )
+                                .await?;
+                        }
+                        const { OPEN_DTU_AC_POWER_TOPIC.name() } => {
+                            let current_power = OPEN_DTU_AC_POWER_TOPIC.decode(&publish.payload)?;
 
-                    info!("yield today: {}W", yield_day);
-                    publish_client
-                        .publish(
-                            MATRIX_DISPLAY_APP_YIELD_DAY_TOPIC.name(),
-                            QoS::AtMostOnce,
-                            false,
-                            MATRIX_DISPLAY_APP_YIELD_DAY_TOPIC.encode(&CustomApplication {
-                                text: yield_day.to_string(),
-                                duration: Some(5),
-                                icon: Some(52455.to_string()),
-                                ..Default::default()
-                            }),
-                        )
-                        .await?;
+                            info!("Current production: {:0.0}W", current_power);
+                            publish_client
+                                .publish(
+                                    MATRIX_DISPLAY_APP_CURRENT_PRODUCTION_TOPIC.name(),
+                                    QoS::AtMostOnce,
+                                    false,
+                                    MATRIX_DISPLAY_APP_CURRENT_PRODUCTION_TOPIC.encode(
+                                        &CustomApplication {
+                                            text: format!("{:0.0}", current_power),
+                                            duration: Some(5),
+                                            icon: Some(37515.to_string()),
+                                            ..Default::default()
+                                        },
+                                    ),
+                                )
+                                .await?;
+                        }
+                        const { PULSE_CONSUMPTION_TOPIC.name() } => {
+                            let consumption = PULSE_CONSUMPTION_TOPIC
+                                .decode(&publish.payload)?
+                                .consumption;
+
+                            info!("Current consumption: {}W", consumption);
+                            publish_client
+                                .publish(
+                                    MATRIX_DISPLAY_APP_CURRENT_CONSUMPTION_TOPIC.name(),
+                                    QoS::AtMostOnce,
+                                    false,
+                                    MATRIX_DISPLAY_APP_CURRENT_CONSUMPTION_TOPIC.encode(
+                                        &CustomApplication {
+                                            text: format!("{:0.1}", consumption as f32 / 1000.0),
+                                            duration: Some(5),
+                                            icon: Some(55888.to_string()),
+                                            life_time: Some(10), // if no update within 10 seconds remove
+                                            ..Default::default()
+                                        },
+                                    ),
+                                )
+                                .await?;
+                        }
+                        const { TIBBER_PRICE_INFORMATION_TOPIC.name() } => {
+                            let price_information: PriceInformation =
+                                TIBBER_PRICE_INFORMATION_TOPIC.decode(&publish.payload)?;
+
+                            info!("Current price: {} Euro", price_information.total);
+                            publish_client
+                                .publish(
+                                    MATRIX_DISPLAY_APP_CURRENT_PRICE_TOPIC.name(),
+                                    QoS::AtMostOnce,
+                                    false,
+                                    MATRIX_DISPLAY_APP_CURRENT_PRICE_TOPIC.encode(
+                                        &CustomApplication {
+                                            text: format!("{:0.2}", price_information.total),
+                                            duration: Some(2),
+                                            icon: Some(54231.to_string()),
+                                            color: Some(
+                                                color_from_price_level(price_information.level)
+                                                    .to_string(),
+                                            ),
+                                            life_time: Some(60 * 62), // 1 hour and 2 minutes to make sure the price is updated
+                                            ..Default::default()
+                                        },
+                                    ),
+                                )
+                                .await?;
+                        }
+                        _ => {}
+                    }
                 }
-                const { OPEN_DTU_AC_POWER_TOPIC.name() } => {
-                    let current_power = OPEN_DTU_AC_POWER_TOPIC.decode(&publish.payload)?;
-
-                    info!("Current production: {:0.0}W", current_power);
-                    publish_client
-                        .publish(
-                            MATRIX_DISPLAY_APP_CURRENT_PRODUCTION_TOPIC.name(),
-                            QoS::AtMostOnce,
-                            false,
-                            MATRIX_DISPLAY_APP_CURRENT_PRODUCTION_TOPIC.encode(
-                                &CustomApplication {
-                                    text: format!("{:0.0}", current_power),
-                                    duration: Some(5),
-                                    icon: Some(37515.to_string()),
-                                    ..Default::default()
-                                },
-                            ),
-                        )
-                        .await?;
-                }
-                const { PULSE_CONSUMPTION_TOPIC.name() } => {
-                    let consumption = PULSE_CONSUMPTION_TOPIC
-                        .decode(&publish.payload)?
-                        .consumption;
-
-                    info!("Current consumption: {}W", consumption);
-                    publish_client
-                        .publish(
-                            MATRIX_DISPLAY_APP_CURRENT_CONSUMPTION_TOPIC.name(),
-                            QoS::AtMostOnce,
-                            false,
-                            MATRIX_DISPLAY_APP_CURRENT_CONSUMPTION_TOPIC.encode(
-                                &CustomApplication {
-                                    text: format!("{:0.1}", consumption as f32 / 1000.0),
-                                    duration: Some(5),
-                                    icon: Some(55888.to_string()),
-                                    life_time: Some(10), // if no update within 10 seconds remove
-                                    ..Default::default()
-                                },
-                            ),
-                        )
-                        .await?;
-                }
-                const { TIBBER_PRICE_INFORMATION_TOPIC.name() } => {
-                    let price_information: PriceInformation =
-                        TIBBER_PRICE_INFORMATION_TOPIC.decode(&publish.payload)?;
-
-                    info!("Current price: {} Euro", price_information.total);
-                    publish_client
-                        .publish(
-                            MATRIX_DISPLAY_APP_CURRENT_PRICE_TOPIC.name(),
-                            QoS::AtMostOnce,
-                            false,
-                            MATRIX_DISPLAY_APP_CURRENT_PRICE_TOPIC.encode(&CustomApplication {
-                                text: format!("{:0.2}", price_information.total),
-                                duration: Some(2),
-                                icon: Some(54231.to_string()),
-                                color: Some(
-                                    color_from_price_level(price_information.level).to_string(),
-                                ),
-                                life_time: Some(60 * 62), // 1 hour and 2 minutes to make sure the price is updated
-                                ..Default::default()
-                            }),
-                        )
-                        .await?;
-                }
-                _ => {}
+            }
+            Err(e) => {
+                error!("Error polling mqtt message = {:?}", e);
+                break;
             }
         }
     }
