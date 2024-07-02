@@ -25,3 +25,4 @@ serde_json = { workspace = true }
 anyhow = { workspace = true }
 env_logger = { workspace = true }
 log = { workspace = true }
+syslog = { workspace = true }
