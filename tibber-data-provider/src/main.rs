@@ -176,7 +176,6 @@ async fn get_tibber_data_and_publish(
                     },
                 };
 
-                // Publish the message
                 return publish_client_tibber_data
                     .publish(
                         TIBBER_PRICE_INFORMATION_TOPIC.name(),
@@ -265,7 +264,6 @@ async fn get_pulse_bridge_data_and_publish(
                         };
                         info!("Power = {current_power}W");
 
-                        // Publish the message
                         let res = publish_client_tibber_data
                             .publish(
                                 PULSE_CONSUMPTION_TOPIC.name(),
