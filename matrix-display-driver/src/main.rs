@@ -16,7 +16,7 @@ use tokio::{sync::mpsc, time::sleep};
 mod awtrix3;
 
 const MQTT_CLIENT_NAME: &str = "matrix-display-updater";
-const MQTT_BROKER_ADDRESS: &str = "iotstore";
+const MQTT_BROKER_ADDRESS: &str = "rpiserver";
 const MQTT_BROKER_PORT: u16 = 1883;
 
 #[tokio::main]

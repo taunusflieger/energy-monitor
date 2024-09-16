@@ -20,7 +20,7 @@ use tokio_cron_scheduler::{Job, JobScheduler};
 const TIBBER_API_URL: &str = "https://api.tibber.com/v1-beta/gql";
 const PULSE_BRIDGE_URL: &str = "http://192.168.100.60/data.json?node_id=1";
 const MQTT_CLIENT_NAME: &str = "tibber_bridge_data_provider";
-const MQTT_BROKER_ADDRESS: &str = "iotstore";
+const MQTT_BROKER_ADDRESS: &str = "rpiserver";
 const MQTT_BROKER_PORT: u16 = 1883;
 const PULSE_BRIDGE_USERNAME: &str = "admin";
 
