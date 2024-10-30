@@ -243,8 +243,13 @@ async fn get_pulse_bridge_data_and_publish(
         buffer.extend_from_slice(&chunk);
     }
 
+    let result = decode(buffer.to_vec());
+    if result.is_empty() {
+        return Err(anyhow!("Failed to decode pulse bridge message"));
+    }
+
     // We have only 1 message
-    let message = decode(buffer.to_vec())[0]
+    let message = result[0]
         .clone()
         .context("Failed to decode pulse bridge message")?;
     let result = parse(&message).context("Failed to parse pulse bridge message")?;
